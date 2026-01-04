@@ -6,7 +6,8 @@ import { Bid } from "@/models/Bid";
 import { Api } from "@/models/Response";
 import formatDate from "@/utils/formatDate";
 import formatRupiah from "@/utils/formatRupiah";
-import { useEffect, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useState } from "react";
 import { FlatList, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -25,25 +26,23 @@ const BidScreen = () => {
         keyExtractor={(item, index) => index.toString()}
         contentContainerStyle={{ paddingHorizontal: 16 }}
         renderItem={({ item }) => (
-          <View className="w-full bg-white rounded-lg px-4 py-2 h-20 flex flex-row overflow-hidden mb-2 space-x-2">
+          <View className="w-full bg-white rounded-lg px-4 py-3 flex flex-row overflow-hidden mb-2 space-x-3 items-center">
             <Img
               uri={item.auction?.images?.[0]}
               className="w-16 h-16 aspect-square object-cover rounded-lg"
             />
-            <View className="flex flex-col h-full">
-              <ThemedText className="max-w-[200px]" type="defaultSemiBold">
+            <View className="flex-1 flex flex-col justify-between py-1">
+              <ThemedText className="line-clamp-1" type="defaultSemiBold" numberOfLines={1}>
                 {item.auction?.name}
               </ThemedText>
-              <ThemedText className="max-w-[200px] text-xs" type="default">
+              <ThemedText className="text-xs text-neutral-600" type="default">
                 {formatRupiah(item.amount)} at{" "}
                 {formatDate(item.createdAt, true, true)}
               </ThemedText>
               <View
-                className={`px-2 py-1 bg-custom-1 rounded-lg w-20 items-center mt-auto ${
-                  getStatusTextAuction(item.auction).color
-                }`}
+                className={`px-2 py-1 rounded-lg w-20 items-center ${getStatusTextAuction(item.auction).color}`}
               >
-                <ThemedText className={`text-xs text-white`}>
+                <ThemedText className="text-xs text-white">
                   {getStatusTextAuction(item.auction).label}
                 </ThemedText>
               </View>
@@ -73,20 +72,26 @@ const useBids = () => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchBid();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      fetchBid()
+    }, [])
+  );
 
   const getStatusTextAuction = (auction: Auction) => {
-    if (auction.start > new Date()) {
+    const now = new Date();
+    const startDate = new Date(auction.start);
+    const endDate = new Date(auction.end);
+
+    if (startDate > now) {
       return { label: "Upcoming", color: "bg-gray-400" };
     } else if (
-      auction.end < new Date() ||
+      endDate < now ||
       auction?.bids?.[0]?.amount === auction.buyNowPrice ||
       auction?.transaction
     ) {
       return { label: "Finished", color: "bg-black" };
-    } else if (auction.start < new Date() && auction.end > new Date()) {
+    } else if (startDate < now && endDate > now) {
       return { label: "Ongoing", color: "bg-blue-400" };
     }
     return { label: "", color: "bg-gray-400" };

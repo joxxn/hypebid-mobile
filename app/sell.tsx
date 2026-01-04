@@ -5,6 +5,7 @@ import { C } from "@/constants/Colors";
 import { useProfile } from "@/hooks/useProfile";
 import { Auction } from "@/models/Auction";
 import { Api } from "@/models/Response";
+import { Kyc, KycStatus } from "@/models/Kyc";
 import formatDate from "@/utils/formatDate";
 import formatRupiah from "@/utils/formatRupiah";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -19,9 +20,109 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+interface KycStatusData {
+  status: "none" | KycStatus;
+  kyc: Kyc | null;
+}
+
+const KycRequiredBanner = ({
+  kycData,
+  onVerify,
+}: {
+  kycData: KycStatusData;
+  onVerify: () => void;
+}) => {
+  const { status } = kycData;
+
+  const getConfig = () => {
+    switch (status) {
+      case "Pending":
+        return {
+          bgColor: "bg-amber-50",
+          borderColor: "border-amber-200",
+          iconColor: "#B45309",
+          icon: "time-outline" as const,
+          title: "KYC Verification Pending",
+          description:
+            "Your identity verification is being reviewed. You can create auctions once verified.",
+          showAction: false,
+        };
+      case "Rejected":
+        return {
+          bgColor: "bg-red-50",
+          borderColor: "border-red-200",
+          iconColor: "#B91C1C",
+          icon: "close-circle-outline" as const,
+          title: "KYC Verification Rejected",
+          description:
+            "Your verification was rejected. Please submit a new KYC to create auctions.",
+          showAction: true,
+          actionLabel: "Retry Verification",
+        };
+      case "Accepted":
+        return null;
+      case "none":
+      default:
+        return {
+          bgColor: "bg-gray-50",
+          borderColor: "border-gray-200",
+          iconColor: "#374151",
+          icon: "shield-outline" as const,
+          title: "KYC Required to Sell",
+          description:
+            "Verify your identity to start selling on HypeBid. This helps ensure safe transactions for everyone.",
+          showAction: true,
+          actionLabel: "Verify Now",
+        };
+    }
+  };
+
+  const config = getConfig();
+
+  if (!config) return null;
+
+  return (
+    <View
+      className={`${config.bgColor} ${config.borderColor} border rounded-xl p-4 mx-4 mt-4`}
+    >
+      <View className="flex-row items-start">
+        <View className="mr-3 mt-0.5">
+          <Ionicons name={config.icon} size={24} color={config.iconColor} />
+        </View>
+        <View className="flex-1">
+          <ThemedText type="defaultSemiBold" className="text-gray-800 mb-1">
+            {config.title}
+          </ThemedText>
+          <ThemedText type="default" className="text-gray-600 text-sm mb-3">
+            {config.description}
+          </ThemedText>
+          {config.showAction && (
+            <TouchableOpacity
+              onPress={onVerify}
+              className="bg-blue-600 rounded-lg py-2.5 px-4 self-start"
+              activeOpacity={0.8}
+            >
+              <ThemedText type="defaultSemiBold" className="text-white text-sm">
+                {config.actionLabel}
+              </ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+};
+
 const SellScreen = () => {
-  const { loading, auctions, fetchData, getColorStatus, setLoading } =
-    useSell();
+  const {
+    loading,
+    auctions,
+    fetchData,
+    getColorStatus,
+    setLoading,
+    kycData,
+    isKycVerified,
+  } = useSell();
   const { profile, refetch: refetchProfile } = useProfile();
 
   const refetch = async () => {
@@ -29,6 +130,18 @@ const SellScreen = () => {
     await refetchProfile();
     await fetchData();
     setLoading(false);
+  };
+
+  const handleNavigateToKyc = () => {
+    router.push("/kyc-verification");
+  };
+
+  const handleCreateAuction = () => {
+    if (!isKycVerified) {
+      router.push("/kyc-verification");
+      return;
+    }
+    router.push("/create-auction");
   };
 
   return (
@@ -75,17 +188,31 @@ const SellScreen = () => {
                   </ThemedText>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  className="px-2 py-1 border-2 border-white rounded-lg items-center justify-center bg-white flex flex-row space-x-1"
-                  onPress={() => router.push("/create-auction")}
+                  className={`px-2 py-1 border-2 border-white rounded-lg items-center justify-center flex flex-row space-x-1 ${isKycVerified ? "bg-white" : "bg-white/80"
+                    }`}
+                  onPress={handleCreateAuction}
                 >
-                  <Ionicons name="add" size={18} color={C[1]} />
+                  <Ionicons
+                    name={isKycVerified ? "add" : "shield-outline"}
+                    size={18}
+                    color={C[1]}
+                  />
                   <ThemedText className="text-custom-1 text-sm" type="label">
-                    Create Auction
+                    {isKycVerified ? "Create Auction" : "Verify to Sell"}
                   </ThemedText>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
+
+          {/* KYC Required Banner */}
+          {!isKycVerified && (
+            <KycRequiredBanner
+              kycData={kycData}
+              onVerify={handleNavigateToKyc}
+            />
+          )}
+
           <View className="space-y-2 mt-8">
             <ThemedText className="px-4 text-neutral-700" type="subtitle">
               Your Post
@@ -131,9 +258,8 @@ const SellScreen = () => {
                       </ThemedText>
                     </View>
                     <View
-                      className={`${
-                        getColorStatus(item).color
-                      } px-2 py-1 rounded-lg w-20 flex items-center justify-center mt-auto`}
+                      className={`${getColorStatus(item).color
+                        } px-2 py-1 rounded-lg w-20 flex items-center justify-center mt-auto`}
                     >
                       <ThemedText className="text-white text-xs">
                         {getColorStatus(item).label}
@@ -161,6 +287,10 @@ const SellScreen = () => {
 const useSell = () => {
   const [loading, setLoading] = useState(false);
   const [auctions, setAuctions] = useState<Auction[]>([]);
+  const [kycData, setKycData] = useState<KycStatusData>({
+    status: "none",
+    kyc: null,
+  });
 
   const fetchData = async () => {
     try {
@@ -175,6 +305,24 @@ const useSell = () => {
       console.log(error);
     }
   };
+
+  const fetchKycStatus = async () => {
+    try {
+      const res = await api.get<Api<Kyc | null>>("/account/check-kyc");
+      const kyc = res.data.data;
+
+      if (kyc === null) {
+        setKycData({ status: "none", kyc: null });
+      } else {
+        setKycData({ status: kyc.status, kyc });
+      }
+    } catch (error) {
+      console.log("Error fetching KYC status:", error);
+      setKycData({ status: "none", kyc: null });
+    }
+  };
+
+  const isKycVerified = kycData.status === "Accepted";
 
   const getColorStatus = (auction: Auction) => {
     if (auction.transaction?.status === "Paid") {
@@ -207,6 +355,7 @@ const useSell = () => {
   useFocusEffect(
     useCallback(() => {
       fetchData();
+      fetchKycStatus();
     }, [])
   );
 
@@ -216,6 +365,8 @@ const useSell = () => {
     fetchData,
     getColorStatus,
     setLoading,
+    kycData,
+    isKycVerified,
   };
 };
 

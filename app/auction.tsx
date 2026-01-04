@@ -9,6 +9,7 @@ import { Auction } from "@/models/Auction";
 import { Bid } from "@/models/Bid";
 import { Api } from "@/models/Response";
 import { Transaction } from "@/models/Transaction";
+import { Kyc, KycStatus } from "@/models/Kyc";
 import formatDate from "@/utils/formatDate";
 import formatRupiah from "@/utils/formatRupiah";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -19,10 +20,100 @@ import {
   FlatList,
   RefreshControl,
   ScrollView,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
+
+interface KycStatusData {
+  status: "none" | KycStatus;
+  kyc: Kyc | null;
+}
+
+const KycRequiredBanner = ({
+  kycData,
+  onVerify,
+}: {
+  kycData: KycStatusData;
+  onVerify: () => void;
+}) => {
+  const { status } = kycData;
+
+  const getConfig = () => {
+    switch (status) {
+      case "Pending":
+        return {
+          bgColor: "bg-amber-50",
+          borderColor: "border-amber-200",
+          iconColor: "#B45309",
+          icon: "time-outline" as const,
+          title: "KYC Verification Pending",
+          description:
+            "Your identity verification is being reviewed. You can bid once verified.",
+          showAction: false,
+        };
+      case "Rejected":
+        return {
+          bgColor: "bg-red-50",
+          borderColor: "border-red-200",
+          iconColor: "#B91C1C",
+          icon: "close-circle-outline" as const,
+          title: "KYC Verification Rejected",
+          description:
+            "Your verification was rejected. Please submit a new KYC to participate in bidding.",
+          showAction: true,
+          actionLabel: "Retry Verification",
+        };
+      case "none":
+      default:
+        return {
+          bgColor: "bg-gray-50",
+          borderColor: "border-gray-200",
+          iconColor: "#374151",
+          icon: "shield-outline" as const,
+          title: "KYC Required to Bid",
+          description:
+            "Verify your identity to participate in auctions. This helps ensure safe transactions.",
+          showAction: true,
+          actionLabel: "Verify Now",
+        };
+    }
+  };
+
+  const config = getConfig();
+
+  return (
+    <View
+      className={`${config.bgColor} ${config.borderColor} border rounded-xl p-4 mb-4`}
+    >
+      <View className="flex-row items-start">
+        <View className="mr-3 mt-0.5">
+          <Ionicons name={config.icon} size={24} color={config.iconColor} />
+        </View>
+        <View className="flex-1">
+          <ThemedText type="defaultSemiBold" className="text-gray-800 mb-1">
+            {config.title}
+          </ThemedText>
+          <ThemedText type="default" className="text-gray-600 text-sm mb-3">
+            {config.description}
+          </ThemedText>
+          {config.showAction && (
+            <TouchableOpacity
+              onPress={onVerify}
+              className="bg-blue-600 rounded-lg py-2.5 px-4 self-start"
+              activeOpacity={0.8}
+            >
+              <ThemedText type="defaultSemiBold" className="text-white text-sm">
+                {config.actionLabel}
+              </ThemedText>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+};
 
 const AuctionPage = () => {
   const {
@@ -37,6 +128,8 @@ const AuctionPage = () => {
     handleBidding,
     setAmount,
     customCase,
+    kycData,
+    isKycVerified,
   } = useAuction();
 
   if (!data) {
@@ -46,6 +139,15 @@ const AuctionPage = () => {
       </View>
     );
   }
+
+  const handleNavigateToKyc = () => {
+    router.push("/kyc-verification");
+  };
+
+  // Check if user can bid (KYC must be Accepted)
+  const canBid = data.isAbleToBid && isKycVerified;
+  const showKycBanner =
+    data.isAbleToBid && !isKycVerified && !data.isSeller;
 
   return (
     <SafeAreaView className="flex-1 ">
@@ -186,7 +288,7 @@ const AuctionPage = () => {
                 Terms & Conditions
               </ThemedText>
               {TERMS_CONDITIONS.map((item, index) => (
-                <View className="flex flex-row space-x-2 w-full">
+                <View className="flex flex-row space-x-2 w-full" key={index}>
                   <ThemedText type="default" className="text-neutral-700">
                     {index + 1}.{" "}
                   </ThemedText>
@@ -254,14 +356,20 @@ const AuctionPage = () => {
         className="w-full h-auto bg-white z-50 fixed bottom-0  flex flex-col px-4 rounded-t-3xl py-4 space-y-2"
         style={{ elevation: 4 }}
       >
-        {data.isAbleToBid && (
+        {/* KYC Required Banner - Show when user needs to verify */}
+        {showKycBanner && (
+          <KycRequiredBanner kycData={kycData} onVerify={handleNavigateToKyc} />
+        )}
+
+        {/* Bid controls - Only show when KYC is verified and can bid */}
+        {canBid && (
           <View>
             <ThemedText type="label">Place Your Bid</ThemedText>
             <View className="w-full flex flex-row justify-between items-center mb-4">
               <CustomButton
                 text={`Quick Bid ${formatRupiah(
                   data.minimumBid +
-                    (data.bids?.[0]?.amount || data.openingPrice)
+                  (data.bids?.[0]?.amount || data.openingPrice)
                 )}`}
                 cn="w-[48%] bg-white border border-custom-1 text-custom-1"
                 cnText="font-omedium text-custom-1"
@@ -272,7 +380,7 @@ const AuctionPage = () => {
                     "Quick",
                     String(
                       data.minimumBid +
-                        (data.bids?.[0]?.amount || data.openingPrice)
+                      (data.bids?.[0]?.amount || data.openingPrice)
                     )
                   )
                 }
@@ -322,6 +430,11 @@ const useAuction = () => {
   const [buyNowBidding, setBuyNowBidding] = useState(false);
   const id = (useLocalSearchParams().id as string) || "";
   const [amount, setAmount] = useState<string>("0");
+  const [kycData, setKycData] = useState<KycStatusData>({
+    status: "none",
+    kyc: null,
+  });
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -337,6 +450,24 @@ const useAuction = () => {
       setLoading(false);
     }
   };
+
+  const fetchKycStatus = async () => {
+    try {
+      const res = await api.get<Api<Kyc | null>>("/account/check-kyc");
+      const kyc = res.data.data;
+
+      if (kyc === null) {
+        setKycData({ status: "none", kyc: null });
+      } else {
+        setKycData({ status: kyc.status, kyc });
+      }
+    } catch (error) {
+      console.log("Error fetching KYC status:", error);
+      setKycData({ status: "none", kyc: null });
+    }
+  };
+
+  const isKycVerified = kycData.status === "Accepted";
 
   const getStatusTextAuction = (auction: Auction) => {
     if (auction.start > new Date()) {
@@ -356,6 +487,7 @@ const useAuction = () => {
   useFocusEffect(
     useCallback(() => {
       fetchData();
+      fetchKycStatus();
     }, [])
   );
 
@@ -363,6 +495,12 @@ const useAuction = () => {
 
   const handleBidding = async (type: Bidding, dto: string = amount) => {
     try {
+      // Check KYC status before allowing bid
+      if (!isKycVerified) {
+        toastError("Please complete KYC verification to bid");
+        return;
+      }
+
       if (isDisable || !data) return;
       if (type === "Quick") {
         setQuickBidding(true);
@@ -419,7 +557,7 @@ const useAuction = () => {
   const customCase: CustomCase = {
     label: "",
     bg: "bg-gray-400",
-    void: () => {},
+    void: () => { },
   };
 
   const handleFinish = async () => {
@@ -494,10 +632,26 @@ const useAuction = () => {
     customCase.label = "Finished";
     customCase.bg = "bg-black";
     customCase.void = undefined;
-  } else if (!data?.isSeller && !data?.transaction && data?.isAbleToBid) {
+  } else if (
+    !data?.isSeller &&
+    !data?.transaction &&
+    data?.isAbleToBid &&
+    isKycVerified
+  ) {
+    // Only allow bidding if KYC is verified
     customCase.label = "Bid Now";
     customCase.bg = "bg-custom-1";
     customCase.void = (type, dto) => handleBidding(type, dto);
+  } else if (
+    !data?.isSeller &&
+    !data?.transaction &&
+    data?.isAbleToBid &&
+    !isKycVerified
+  ) {
+    // KYC not verified - show verify button
+    customCase.label = "Verify KYC to Bid";
+    customCase.bg = "bg-blue-600";
+    customCase.void = () => router.push("/kyc-verification");
   }
 
   console.log("STATUS  ", data?.isAbleToBid, data?.isAbleToFinish);
@@ -514,6 +668,8 @@ const useAuction = () => {
     setAmount,
     handleBidding,
     customCase,
+    kycData,
+    isKycVerified,
   };
 };
 
