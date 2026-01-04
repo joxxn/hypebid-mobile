@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "6fa6a82a-d113-4655-87e6-7bb9cf24c8d6"
+      }
+    },
+    "android": {
+      "package": "com.jovan1.hypebid"
+    }
+  }
+}
